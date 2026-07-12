@@ -122,32 +122,38 @@ async function run() {
     // Wait a bit for plugin to initialize
     await new Promise(r => setTimeout(r, 2000));
 
-    console.log("Loading .bbmodel files into Blockbench (one by one)...");
-    for (const f of flatFiles) {
-        console.log(`Injecting ${f.name}...`);
-        const buffer = fs.readFileSync(f.path);
-        const b64 = buffer.toString('base64');
+    console.log("Loading .bbmodel files into Blockbench (batched for speed)...");
+    const batchSize = 20;
+    for (let i = 0; i < flatFiles.length; i += batchSize) {
+        const batch = flatFiles.slice(i, i + batchSize);
+        console.log(`Injecting batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(flatFiles.length / batchSize)}...`);
         
-        await page.evaluate(async (name, b64Data) => {
-            const res = await fetch(`data:application/octet-stream;base64,${b64Data}`);
-            const blob = await res.blob();
-            // Blockbench expects a File/Blob object
-            const file = new File([blob], name, { type: 'application/octet-stream' });
+        const fileDataArray = batch.map(f => {
+            const buffer = fs.readFileSync(f.path);
+            return { name: f.name, b64: buffer.toString('base64') };
+        });
+
+        await page.evaluate(async (files) => {
+            const fileObjects = [];
+            for (const f of files) {
+                const res = await fetch(`data:application/octet-stream;base64,${f.b64}`);
+                const blob = await res.blob();
+                fileObjects.push(new File([blob], f.name, { type: 'application/octet-stream' }));
+            }
             
             await new Promise((resolve) => {
-                Blockbench.read([file], {name: name}, (results) => {
+                Blockbench.read(fileObjects, {}, (results) => {
                     resolve();
                 });
             });
-        }, f.name, b64);
-        
-        // Small delay to ensure it's loaded in UI
-        await new Promise(r => setTimeout(r, 500));
+        }, fileDataArray);
     }
 
     console.log("Triggering Export All...");
     await page.evaluate(() => {
-        if (typeof export_all_action !== 'undefined') {
+        if (typeof BarItems !== 'undefined' && BarItems['export_all_geysermodelengine']) {
+            BarItems['export_all_geysermodelengine'].click();
+        } else if (typeof export_all_action !== 'undefined') {
             export_all_action.click();
         } else {
             console.error("Plugin action not found!");
