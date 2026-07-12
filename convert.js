@@ -130,14 +130,12 @@ async function run() {
         
         await page.evaluate(async (name, b64Data) => {
             const res = await fetch(`data:application/octet-stream;base64,${b64Data}`);
-            const buf = await res.arrayBuffer();
+            const blob = await res.blob();
+            // Blockbench expects a File/Blob object
+            const file = new File([blob], name, { type: 'application/octet-stream' });
             
             await new Promise((resolve) => {
-                Blockbench.read([{
-                    name: name,
-                    content: buf,
-                    path: name
-                }], {name: name}, (results) => {
+                Blockbench.read([file], {name: name}, (results) => {
                     resolve();
                 });
             });
