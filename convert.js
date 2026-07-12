@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
 
-const inputUrl = process.argv[2];
 const WORK_DIR = path.join(__dirname, 'workspace');
 const INPUT_ZIP_PATH = path.join(__dirname, 'input.zip');
 const EXTRACT_DIR = path.join(WORK_DIR, 'extracted');
