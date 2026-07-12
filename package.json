@@ -1,0 +1,18 @@
+{
+  "name": "meg-converter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "geyser_model_engine_packer (1).js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "adm-zip": "^0.6.0",
+    "axios": "^1.18.1",
+    "puppeteer": "^25.3.0"
+  }
+}
