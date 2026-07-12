@@ -117,6 +117,15 @@ async function run() {
         const script = document.createElement('script');
         script.textContent = code;
         document.body.appendChild(script);
+        
+        // Blockbench might not automatically call onload() for manually injected scripts
+        if (typeof Plugins !== 'undefined' && Plugins.all) {
+            const plugin = Plugins.all.find(p => p.id === 'geyser_model_engine_packer');
+            if (plugin && typeof plugin.onload === 'function') {
+                plugin.onload();
+                console.log("Plugin onload() manually triggered.");
+            }
+        }
     }, pluginCode);
 
     // Wait a bit for plugin to initialize
