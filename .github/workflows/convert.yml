@@ -19,6 +19,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
+      - name: Download ZIP File
+        run: wget -O input.zip "${{ github.event.inputs.zip_url }}" || { echo "Download failed. Check the URL."; exit 1; }
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -28,16 +31,15 @@ jobs:
         run: npm install
         
       - name: Install Puppeteer system dependencies
-        # Puppeteer requires some shared libraries on Ubuntu
         run: |
           sudo apt-get update
           sudo apt-get install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
         
       - name: Run Converter Script
-        run: node convert.js "${{ github.event.inputs.zip_url }}"
+        run: node convert.js
         
       - name: Upload Final ZIP
         uses: actions/upload-artifact@v4
         with:
           name: Bedrock-GeyserMC-Output
-          path: Final_GeyserMC_Input.zip
+          path: meg-bedrock.zip

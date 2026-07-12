@@ -12,7 +12,6 @@
   "type": "commonjs",
   "dependencies": {
     "adm-zip": "^0.6.0",
-    "axios": "^1.18.1",
     "puppeteer": "^25.3.0"
   }
 }

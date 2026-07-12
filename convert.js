@@ -6,11 +6,11 @@ const puppeteer = require('puppeteer');
 
 const inputUrl = process.argv[2];
 const WORK_DIR = path.join(__dirname, 'workspace');
-const INPUT_ZIP_PATH = path.join(WORK_DIR, 'input.zip');
+const INPUT_ZIP_PATH = path.join(__dirname, 'input.zip');
 const EXTRACT_DIR = path.join(WORK_DIR, 'extracted');
 const FLAT_DIR = path.join(WORK_DIR, 'flattened');
 const DOWNLOADS_DIR = path.join(WORK_DIR, 'downloads');
-const FINAL_ZIP_PATH = path.join(__dirname, 'Final_GeyserMC_Input.zip');
+const FINAL_ZIP_PATH = path.join(__dirname, 'meg-bedrock.zip');
 const PLUGIN_PATH = path.join(__dirname, 'geyser_model_engine_packer (1).js');
 
 // Utility to clean directory
@@ -19,23 +19,6 @@ function cleanDir(dir) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
     fs.mkdirSync(dir, { recursive: true });
-}
-
-// Download file via axios
-async function downloadFile(url, dest) {
-    console.log(`Downloading from ${url} ...`);
-    const response = await axios({
-        url,
-        method: 'GET',
-        responseType: 'stream'
-    });
-    
-    return new Promise((resolve, reject) => {
-        const writer = fs.createWriteStream(dest);
-        response.data.pipe(writer);
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-    });
 }
 
 // Recursively find all bbmodels
@@ -61,8 +44,8 @@ function getUniqueName(filePath, extractDir) {
 }
 
 async function run() {
-    if (!inputUrl) {
-        console.error("Please provide a ZIP URL as the first argument.");
+    if (!fs.existsSync(INPUT_ZIP_PATH)) {
+        console.error("input.zip not found! Make sure it is downloaded first.");
         process.exit(1);
     }
 
@@ -73,9 +56,7 @@ async function run() {
     cleanDir(DOWNLOADS_DIR);
     if (fs.existsSync(FINAL_ZIP_PATH)) fs.unlinkSync(FINAL_ZIP_PATH);
 
-    console.log("=== 2. DOWNLOADING & EXTRACTING ===");
-    await downloadFile(inputUrl, INPUT_ZIP_PATH);
-    console.log("Download complete. Extracting...");
+    console.log("=== 2. EXTRACTING INPUT ===");
     
     const zip = new AdmZip(INPUT_ZIP_PATH);
     zip.extractAllTo(EXTRACT_DIR, true);
