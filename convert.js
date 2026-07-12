@@ -80,7 +80,14 @@ async function run() {
     console.log("=== 4. LAUNCHING BLOCKBENCH HEADLESS ===");
     const browser = await puppeteer.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,720']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--window-size=1280,720',
+            '--enable-unsafe-swiftshader',
+            '--use-gl=swiftshader',
+            '--disable-gpu'
+        ]
     });
 
     const page = await browser.newPage();
@@ -94,8 +101,14 @@ async function run() {
     page.on('dialog', async dialog => await dialog.accept());
     page.on('console', msg => console.log('BLOCKBENCH:', msg.text()));
 
+    console.log("Navigating to Blockbench...");
     await page.goto('https://web.blockbench.net/', { waitUntil: 'networkidle2' });
-    await page.waitForSelector('#main_header', { timeout: 30000 });
+    
+    console.log("Waiting for Blockbench Engine to initialize...");
+    // Wait for the global Blockbench object instead of DOM elements, ensuring the API is ready
+    await page.waitForFunction('typeof Blockbench !== "undefined"', { timeout: 30000 });
+    // Additional wait for internal setup to complete
+    await new Promise(r => setTimeout(r, 5000));
 
     console.log("Loading plugin...");
     const pluginCode = fs.readFileSync(PLUGIN_PATH, 'utf-8');
