@@ -113,18 +113,24 @@ async function run() {
     console.log("Loading plugin...");
     const pluginCode = fs.readFileSync(PLUGIN_PATH, 'utf-8');
     await page.evaluate((code) => {
-        // Evaluate the plugin code in the browser context
+        // Intercept BBPlugin.register to reliably get the plugin definition
+        window.injectedPluginData = null;
+        const originalRegister = BBPlugin.register;
+        BBPlugin.register = function(id, data) {
+            window.injectedPluginData = data;
+            return originalRegister.apply(this, arguments);
+        };
+
         const script = document.createElement('script');
         script.textContent = code;
         document.body.appendChild(script);
         
-        // Blockbench might not automatically call onload() for manually injected scripts
-        if (typeof Plugins !== 'undefined' && Plugins.all) {
-            const plugin = Plugins.all.find(p => p.id === 'geyser_model_engine_packer');
-            if (plugin && typeof plugin.onload === 'function') {
-                plugin.onload();
-                console.log("Plugin onload() manually triggered.");
-            }
+        // Force onload() to execute so the actions get registered!
+        if (window.injectedPluginData && typeof window.injectedPluginData.onload === 'function') {
+            window.injectedPluginData.onload();
+            console.log("Plugin onload() successfully intercepted and triggered.");
+        } else {
+            console.error("Failed to intercept plugin data!");
         }
     }, pluginCode);
 
