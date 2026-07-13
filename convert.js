@@ -36,8 +36,9 @@ function findBbmodels(dir, fileList = []) {
 // Ensure unique filenames by prefixing with parent folder name
 function getUniqueName(filePath, extractDir) {
     const relativePath = path.relative(extractDir, filePath);
-    // Replace folder separators with underscores
-    const safeName = relativePath.split(path.sep).join('_');
+    // Replace folder separators with underscores, and replace spaces with underscores
+    let safeName = relativePath.split(path.sep).join('_');
+    safeName = safeName.replace(/ /g, '_');
     return safeName;
 }
 
@@ -137,80 +138,99 @@ async function run() {
     // Wait a bit for plugin to initialize
     await new Promise(r => setTimeout(r, 2000));
 
-    console.log("Loading .bbmodel files into Blockbench (batched for speed)...");
-    const batchSize = 20;
-    for (let i = 0; i < flatFiles.length; i += batchSize) {
-        const batch = flatFiles.slice(i, i + batchSize);
-        console.log(`Injecting batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(flatFiles.length / batchSize)}...`);
-        
-        const fileDataArray = batch.map(f => {
-            const buffer = fs.readFileSync(f.path);
-            return { name: f.name, b64: buffer.toString('base64') };
-        });
-
-        await page.evaluate(async (files) => {
-            const dt = new DataTransfer();
-            for (const f of files) {
-                const res = await fetch(`data:application/octet-stream;base64,${f.b64}`);
-                const blob = await res.blob();
-                dt.items.add(new File([blob], f.name, { type: 'application/octet-stream' }));
-            }
-            
-            const dropEvent = new DragEvent('drop', {
-                dataTransfer: dt,
-                bubbles: true,
-                cancelable: true
-            });
-            document.body.dispatchEvent(dropEvent);
-            
-            // Wait for Blockbench to process the dropped files
-            await new Promise(r => setTimeout(r, 2000));
-        }, fileDataArray);
-    }
-
-    console.log("Triggering Export All...");
+    console.log("Setting up native file upload listener...");
     await page.evaluate(() => {
-        if (typeof BarItems !== 'undefined' && BarItems['export_all_geysermodelengine']) {
-            BarItems['export_all_geysermodelengine'].click();
-        } else if (typeof export_all_action !== 'undefined') {
-            export_all_action.click();
-        } else {
-            console.error("Plugin action not found!");
+        if (!document.getElementById('puppeteer_upload')) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.id = 'puppeteer_upload';
+            input.addEventListener('change', (e) => {
+                const dt = new DataTransfer();
+                for (let f of e.target.files) dt.items.add(f);
+                const dropEvent = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true });
+                document.body.dispatchEvent(dropEvent);
+            });
+            document.body.appendChild(input);
         }
     });
 
-    console.log("Waiting for download to finish (unzip_it_to_input.zip)...");
+    const FINAL_EXTRACT_DIR = path.join(WORK_DIR, 'final_extracted');
+    cleanDir(FINAL_EXTRACT_DIR);
+
+    console.log("Loading .bbmodel files into Blockbench (batched for speed & memory)...");
+    const batchSize = 50;
     
-    // Wait for the zip file to appear in DOWNLOADS_DIR
-    let downloadedFilePath = null;
-    let retries = 30; // 30 seconds timeout
-    while (retries > 0) {
-        const files = fs.readdirSync(DOWNLOADS_DIR);
-        // Wait for .zip and NOT .crdownload
-        const zipFile = files.find(f => f.endsWith('.zip') && !f.endsWith('.crdownload'));
-        if (zipFile) {
-            downloadedFilePath = path.join(DOWNLOADS_DIR, zipFile);
-            break;
+    for (let i = 0; i < flatFiles.length; i += batchSize) {
+        const batch = flatFiles.slice(i, i + batchSize);
+        console.log(`\n--- Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(flatFiles.length / batchSize)} ---`);
+        
+        const batchPaths = batch.map(f => f.path);
+        
+        const inputHandle = await page.$('#puppeteer_upload');
+        await inputHandle.uploadFile(...batchPaths);
+        
+        // Wait for Blockbench to process the dropped files
+        await new Promise(r => setTimeout(r, 3000));
+        
+        console.log(`Triggering Export for batch ${Math.floor(i / batchSize) + 1}...`);
+        await page.evaluate(() => {
+            if (typeof BarItems !== 'undefined' && BarItems['export_all_geysermodelengine']) {
+                BarItems['export_all_geysermodelengine'].click();
+            } else if (typeof export_all_action !== 'undefined') {
+                export_all_action.click();
+            } else {
+                console.error("Plugin action not found!");
+            }
+        });
+
+        console.log("Waiting for batch download to finish...");
+        let downloadedFilePath = null;
+        let retries = 60; // 60 seconds timeout per batch
+        
+        while (retries > 0) {
+            const files = fs.readdirSync(DOWNLOADS_DIR);
+            const zipFile = files.find(f => f.endsWith('.zip') && !f.endsWith('.crdownload'));
+            if (zipFile) {
+                downloadedFilePath = path.join(DOWNLOADS_DIR, zipFile);
+                break;
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            retries--;
         }
+
+        if (!downloadedFilePath) {
+            console.error("Batch download failed or timed out.");
+            process.exit(1);
+        }
+
+        console.log(`Extracting batch zip...`);
+        const zip = new AdmZip(downloadedFilePath);
+        zip.extractAllTo(FINAL_EXTRACT_DIR, true);
+
+        // Delete the zip to prepare for next batch
+        fs.unlinkSync(downloadedFilePath);
+
+        console.log(`Closing Blockbench tabs to free RAM...`);
+        await page.evaluate(() => {
+            if (typeof ModelProject !== 'undefined' && ModelProject.all) {
+                // Duplicate array because closing projects mutates it
+                [...ModelProject.all].forEach(p => {
+                    if (p && typeof p.close === 'function') p.close();
+                });
+            }
+        });
+        
         await new Promise(r => setTimeout(r, 1000));
-        retries--;
     }
 
     await browser.close();
 
-    if (!downloadedFilePath) {
-        console.error("Download failed or timed out.");
-        process.exit(1);
-    }
-
     console.log("=== 5. PACKAGING FINAL GEYSERMC ZIP ===");
-    console.log(`Found downloaded export: ${downloadedFilePath}`);
-    
-    // The downloaded file is already a ZIP. 
-    // It contains the folders for each model.
-    // We will just rename and copy it to the root as Final_GeyserMC_Input.zip
-    fs.copyFileSync(downloadedFilePath, FINAL_ZIP_PATH);
-    console.log(`Success! Created ${FINAL_ZIP_PATH}`);
+    const finalZip = new AdmZip();
+    finalZip.addLocalFolder(FINAL_EXTRACT_DIR);
+    finalZip.writeZip(FINAL_ZIP_PATH);
+    console.log(`Success! Merged all batches and created ${FINAL_ZIP_PATH}`);
     
     // Optional cleanup
     cleanDir(WORK_DIR);
