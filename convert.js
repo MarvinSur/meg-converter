@@ -69,7 +69,19 @@ async function run() {
         const uniqueName = getUniqueName(file, EXTRACT_DIR);
         const dest = path.join(FLAT_DIR, uniqueName);
         fs.copyFileSync(file, dest);
-        flatFiles.push({ path: dest, name: uniqueName });
+        
+        // Compute original properties for restoring folder structure later
+        const relativePath = path.relative(EXTRACT_DIR, file);
+        const originalDir = path.dirname(relativePath); // e.g. "SENJATA LEGEND/SL Archer Awakened"
+        const originalBasename = path.basename(relativePath, '.bbmodel'); // e.g. "archer"
+        
+        flatFiles.push({ 
+            path: dest, 
+            name: uniqueName,
+            safeProjectName: uniqueName.replace('.bbmodel', ''),
+            originalDir: originalDir === '.' ? '' : originalDir,
+            originalBasename: originalBasename
+        });
         console.log(`- Prepared: ${uniqueName}`);
     }
 
@@ -204,9 +216,39 @@ async function run() {
             process.exit(1);
         }
 
-        console.log(`Extracting batch zip...`);
+        console.log(`Extracting and mapping batch zip...`);
+        const batchExtractDir = path.join(WORK_DIR, 'batch_extract');
+        cleanDir(batchExtractDir);
         const zip = new AdmZip(downloadedFilePath);
-        zip.extractAllTo(FINAL_EXTRACT_DIR, true);
+        zip.extractAllTo(batchExtractDir, true);
+
+        // Restore original folder structures
+        const exportedFolders = fs.readdirSync(batchExtractDir);
+        for (const safeName of exportedFolders) {
+            const folderPath = path.join(batchExtractDir, safeName);
+            if (!fs.statSync(folderPath).isDirectory()) continue;
+            
+            const mapInfo = flatFiles.find(f => f.safeProjectName === safeName);
+            if (!mapInfo) {
+                // Fallback if mapping somehow fails
+                const targetPath = path.join(FINAL_EXTRACT_DIR, safeName);
+                if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
+                fs.cpSync(folderPath, targetPath, { recursive: true });
+                continue;
+            }
+            
+            const targetDir = path.join(FINAL_EXTRACT_DIR, mapInfo.originalDir, mapInfo.originalBasename);
+            fs.mkdirSync(targetDir, { recursive: true });
+            
+            const files = fs.readdirSync(folderPath);
+            for (const file of files) {
+                let newFileName = file;
+                if (file === safeName + '.geo.json') newFileName = mapInfo.originalBasename + '.geo.json';
+                if (file === safeName + '.animation.json') newFileName = mapInfo.originalBasename + '.animation.json';
+                
+                fs.copyFileSync(path.join(folderPath, file), path.join(targetDir, newFileName));
+            }
+        }
 
         // Delete the zip to prepare for next batch
         fs.unlinkSync(downloadedFilePath);
