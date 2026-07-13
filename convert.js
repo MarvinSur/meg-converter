@@ -149,18 +149,22 @@ async function run() {
         });
 
         await page.evaluate(async (files) => {
-            const fileObjects = [];
+            const dt = new DataTransfer();
             for (const f of files) {
                 const res = await fetch(`data:application/octet-stream;base64,${f.b64}`);
                 const blob = await res.blob();
-                fileObjects.push(new File([blob], f.name, { type: 'application/octet-stream' }));
+                dt.items.add(new File([blob], f.name, { type: 'application/octet-stream' }));
             }
             
-            await new Promise((resolve) => {
-                Blockbench.read(fileObjects, {}, (results) => {
-                    resolve();
-                });
+            const dropEvent = new DragEvent('drop', {
+                dataTransfer: dt,
+                bubbles: true,
+                cancelable: true
             });
+            document.body.dispatchEvent(dropEvent);
+            
+            // Wait for Blockbench to process the dropped files
+            await new Promise(r => setTimeout(r, 2000));
         }, fileDataArray);
     }
 
